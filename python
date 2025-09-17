@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Syntax Budget Tracker</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{
+      --bg:#111827;
+      --card:#1f2937;
+      --accent:#10b981;
+      --danger:#ef4444;
+      --text:#f9fafb;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+    body{background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px}
+    .app{max-width:420px;width:100%}
+
+    /* HEADER */
+    header{background:var(--card);border-radius:20px;padding:20px;margin-bottom:20px;text-align:center}
+    header h1{font-size:24px;margin-bottom:4px;color:var(--accent)}
+    header p{font-size:14px;opacity:.7}
+
+    /* KPI */
+    .kpi{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+    .kpi div{background:var(--card);border-radius:14px;padding:14px;text-align:center}
+    .kpi div span{display:block;font-size:18px;font-weight:700}
+    .kpi div small{font-size:12px;opacity:.6}
+
+    /* CHART */
+    .chart{background:var(--card);border-radius:14px;padding:14px;margin-bottom:20px}
+    canvas{max-height:200px}
+
+    /* HISTORY */
+    .history{background:var(--card);border-radius:14px;padding:14px;margin-bottom:80px}
+    .history h2{margin-bottom:10px;font-size:18px}
+    ul{list-style:none}
+    li{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #374151}
+    li:last-child{border:none}
+    .left{display:flex;align-items:center;gap:12px}
+    .emoji{font-size:24px}
+    .details span{display:block}
+    .details .desc{font-weight:600}
+    .details .date{font-size:12px;opacity:.6}
+    .amount{font-weight:700}
+    .income{color:var(--accent)}
+    .expense{color:var(--danger)}
+
+    /* FAB */
+    .fab{position:fixed;bottom:20px;right:20px;width:56px;height:56px;border:none;border-radius:50%;background:var(--accent);color:#111;font-size:24px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+
+    /* MODAL */
+    .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);place-items:center;z-index:10}
+    .modal-content{background:var(--card);border-radius:20px;padding:20px;width:90%;max-width:340px}
+    .modal-content h2{margin-bottom:12px}
+    .modal-content input,select{width:100%;padding:10px;margin-bottom:10px;border:none;border-radius:8px;background:#374151;color:var(--text)}
+    .modal-content button{width:48%;padding:10px;border:none;border-radius:8px;cursor:pointer}
+    .modal-content .cancel{background:#374151;color:var(--text)}
+    .modal-content .add{background:var(--accent);color:#111}
+    .flex{display:flex;justify-content:space-between;gap:8px}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- HEADER -->
+    <header>
+      <h1>Syntax Budget Tracker</h1>
+      <p>Welcome, Kristolle • VISA ****6510</p>
+    </header>
+
+    <!-- KPI -->
+    <div class="kpi">
+      <div><span id="balance">$6 500.00</span><small>Balance</small></div>
+      <div><span id="income">$0</span><small>Income</small></div>
+      <div><span id="expense">$0</span><small>Expense</small></div>
+      <div><span id="savings">0 %</span><small>Savings</small></div>
+    </div>
+
+    <!-- CHART -->
+    <div class="chart">
+      <canvas id="chart"></canvas>
+    </div>
+
+    <!-- HISTORY -->
+    <div class="history">
+      <h2>Transaction History</h2>
+      <ul id="history"></ul>
+    </div>
+  </div>
+
+  <!-- FAB -->
+  <button class="fab" onclick="openModal()">+</button>
+
+  <!-- ADD MODAL -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2>Add Transaction</h2>
+      <input id="desc" placeholder="Description" required>
+      <input id="amount" type="number" step="0.01" placeholder="Amount" required>
+      <select id="type">
+        <option value="income">Income</option>
+        <option value="expense">Expense</option>
+      </select>
+      <input id="cat" placeholder="Category (optional)">
+      <div class="flex">
+        <button class="cancel" onclick="closeModal()">Cancel</button>
+        <button class="add" onclick="addTx()">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* ---------- STATE ---------- */
+    const LS_KEY = 'syntaxBudget';
+    let txs = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+
+    /* ---------- UTILS ---------- */
+    const $ = s => document.querySelector(s);
+    const fmt = n => '$' + n.toLocaleString('en-US',{minimumFractionDigits:2});
+    const today = () => new Date().toISOString().slice(0,10);
+
+    /* ---------- RENDER ---------- */
+    function render(){
+      const income = txs.filter(t=>t.type==='income').reduce((a,t)=>a+t.amount,0);
+      const expense = txs.filter(t=>t.type==='expense').reduce((a,t)=>a+t.amount,0);
+      const balance = income - expense;
+      const savings = income ? Math.round((balance/income)*100) : 0;
+
+      $('#balance').textContent = fmt(balance);
+      $('#income').textContent  = fmt(income);
+      $('#expense').textContent = fmt(expense);
+      $('#savings').textContent = savings + '%';
+
+      /* HISTORY */
+      $('#history').innerHTML = txs.reverse().map(t=>`
+        <li>
+          <div class="left">
+            <span class="emoji">${t.type==='income'?'💰':'💸'}</span>
+            <div class="details">
+              <span class="desc">${t.desc}</span>
+              <span class="date">${t.date} • ${t.category || 'Uncategorised'}</span>
+            </div>
+          </div>
+          <span class="amount ${t.type}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</span>
+        </li>`).join('');
+
+      /* CHART */
+      renderChart();
+    }
+
+    function renderChart(){
+      const last30 = Array.from({length:30},(_,i)=>{
+        const d = new Date(); d.setDate(d.getDate()-29+i);
+        return d.toISOString().slice(0,10);
+      });
+      const dailyBalance = last30.map(date=>{
+        const upTo = new Date(date + 'T23:59:59Z');
+        return txs
+          .filter(t=>new Date(t.date) <= upTo)
+          .reduce((a,t)=>a + (t.type==='income'?t.amount:-t.amount),0);
+      });
+
+      const ctx = $('#chart');
+      if(window.myChart) window.myChart.destroy();
+      window.myChart = new Chart(ctx,{
+        type:'line',
+        data:{
+          labels:last30.map(d=>new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'})),
+          datasets:[{label:'Balance',data:dailyBalance,borderColor:'#10b981',backgroundColor:'rgba(16,185,129,.1)',fill:true,tension:.3,pointRadius:0,borderWidth:2}]
+        },
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}
+      });
+    }
+
+    /* ---------- CRUD ---------- */
+    function save(){localStorage.setItem(LS_KEY,JSON.stringify(txs));render();}
+
+    /* ---------- MODAL ---------- */
+    function openModal(){ $('#modal').style.display='grid'; }
+    function closeModal(){ $('#modal').style.display='none'; }
+    function addTx(){
+      const desc  = $('#desc').value.trim();
+      const amt   = parseFloat($('#amount').value);
+      const type  = $('#type').value;
+      const cat   = $('#cat').value.trim() || 'General';
+      if(!desc || isNaN(amt)) return alert('Fill all fields');
+      txs.push({desc,amount:amt,type,category:cat,date:today()});
+      save();closeModal();
+    }
+
+    /* ---------- INIT ---------- */
+    render();
+  </script>
+</body>
+</html>
